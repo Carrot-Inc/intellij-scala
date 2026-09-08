@@ -628,7 +628,7 @@ class ImplicitCollector(
 
       if (canContainTargetMethod(c)) {
         filteredCandidatesRaw += c
-      } else {
+      } else if (!isExtensionWithOtherName(c)) {
         filteredCandidatesRaw ++= checkCompatible(
           c,
           withLocalTypeInference,
@@ -1378,6 +1378,18 @@ class ImplicitCollector(
         )
     }
   }
+
+  /**
+   * In an extension-method search (`x.foo` where `foo` is not a member of the type of `x`), an extension
+   * method candidate can only be a result if it is named `foo` — see [[applyExtensionPredicate]], which
+   * enforces exactly this after the conformance check. Comparing the name first skips the conformance check
+   * (the expensive part of [[collectCompatibleCandidates]]) for every other visible extension method; in a
+   * scope with many extensions that is nearly all candidates.
+   */
+  private def isExtensionWithOtherName(srr: ScalaResolveResult): Boolean =
+    srr.isExtensionCall && extensionData.exists { data =>
+      data.refName.nonEmpty && !ScalaNamesUtil.equivalent(data.refName, srr.renamed.getOrElse(srr.name))
+    }
 
   private def hasExplicitClause(srr: ScalaResolveResult): Boolean = srr.element match {
     case fun: ScFunction =>
