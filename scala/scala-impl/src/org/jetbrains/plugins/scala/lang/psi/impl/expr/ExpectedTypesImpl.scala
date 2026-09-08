@@ -6,6 +6,7 @@ import org.jetbrains.plugins.scala.extensions.{IterableExt, ObjectExt, PsiElemen
 import org.jetbrains.plugins.scala.externalLibraries.kindProjector.KindProjectorUtil.{Lambda, LambdaSymbolic}
 import org.jetbrains.plugins.scala.lang.psi.ElementScope
 import org.jetbrains.plugins.scala.lang.psi.ScalaPsiUtil.inNameContext
+import org.jetbrains.plugins.scala.lang.macros.evaluator.impl.MonocleFocusApply
 import org.jetbrains.plugins.scala.lang.psi.api.InferUtil
 import org.jetbrains.plugins.scala.lang.psi.api.base.ScConstructorInvocation
 import org.jetbrains.plugins.scala.lang.psi.api.base.patterns.{ScCaseClause, ScCaseClauses, ScReferencePattern, ScTuplePattern, ScWildcardPattern}
@@ -369,6 +370,11 @@ class ExpectedTypesImpl extends ExpectedTypes {
 
     def expectedTypesForArg(invocation: MethodInvocation): Array[ParameterType] = {
       implicit val context: Context = Context(invocation)
+
+      MonocleFocusApply.expectedArgumentType(invocation, expr) match {
+        case Some(tpe) => return Array((tpe, None))
+        case None      =>
+      }
 
       val argExprs = invocation.argumentExpressions
       val invoked  = invocation.getEffectiveInvokedExpr

@@ -3,6 +3,7 @@ package org.jetbrains.plugins.scala.lang.psi.impl.expr
 import com.intellij.psi.PsiElement
 import org.jetbrains.plugins.scala.extensions.ObjectExt
 import org.jetbrains.plugins.scala.lang.psi.api.expr.{MethodInvocation, ScAssignment}
+import org.jetbrains.plugins.scala.lang.psi.api.statements.ScFunction
 import org.jetbrains.plugins.scala.lang.psi.api.statements.ScFunction.CommonNames
 import org.jetbrains.plugins.scala.lang.psi.impl.ScalaPsiElementFactory.createExpressionFromText
 import org.jetbrains.plugins.scala.lang.psi.implicits.ImplicitConversionResolveResult
@@ -42,8 +43,15 @@ case class ApplyOrUpdateInvocation(
 
     val simpleCandidates = candidatesFromType(proc, targetType)
 
+    // A member `apply` without explicit parameter clauses (e.g. `def apply[A]: MkFocus[A]`) is applied to the
+    // arguments through its result (`obj[A](args)` is `obj.apply[A].apply(args)`), so no view is searched for it.
+    val hasParameterlessApply = simpleCandidates.exists(_.element match {
+      case fun: ScFunction => fun.paramClauses.clauses.forall(_.isImplicit)
+      case _               => false
+    })
+
     val candidates =
-      if (simpleCandidates.forall(!_.isApplicable()) && withImplicits) {
+      if (simpleCandidates.forall(!_.isApplicable()) && withImplicits && !hasParameterlessApply) {
         val noImplicitsForArgs = simpleCandidates.nonEmpty
         candidatesWithConversion(proc, noImplicitsForArgs)
       } else simpleCandidates

@@ -5,6 +5,7 @@ import com.intellij.psi.{PsiElement, PsiMethod}
 import org.jetbrains.plugins.scala.caches.{BlockModificationTracker, cachedWithRecursionGuard}
 import org.jetbrains.plugins.scala.extensions._
 import org.jetbrains.plugins.scala.lang.macros.evaluator.{MacroContext, MacroInvocationContext, ScalaMacroEvaluator}
+import org.jetbrains.plugins.scala.lang.macros.evaluator.impl.MonocleFocusApply
 import org.jetbrains.plugins.scala.lang.psi.ScalaPsiUtil._
 import org.jetbrains.plugins.scala.lang.psi.api.InferUtil._
 import org.jetbrains.plugins.scala.lang.psi.api.expr.ScExpression.ExpressionTypeResult
@@ -393,6 +394,7 @@ abstract class MethodInvocationImpl(node: ASTNode) extends ScExpressionImplBase(
     val fromMacroExpansion =
       maybeResolveResult
         .flatMap(res => this.checkMacro(res).orElse(this.checkMacroExpansion(res)))
+        .orElse(MonocleFocusApply.typeOf(invokedType, this))
         .map(RegularCase(_, maybeResolveResult))
 
     if (fromMacroExpansion.isDefined) return fromMacroExpansion
