@@ -1,6 +1,7 @@
 package org.jetbrains.plugins.scala.lang.psi.implicits
 
 import com.intellij.psi.{PsiElement, PsiFile}
+import org.jetbrains.plugins.scala.lang.psi.impl.ScalaPsiManager
 import org.jetbrains.plugins.scala.caches.{BlockModificationTracker, cachedWithRecursionGuard}
 import org.jetbrains.plugins.scala.extensions.{ObjectExt, PsiElementExt, childOf}
 import org.jetbrains.plugins.scala.lang.psi.api.base.patterns.ScCaseClause
@@ -39,12 +40,15 @@ case class ImplicitSearchScope(representative: PsiElement) {
       new ImplicitParametersProcessor(representative, withoutPrecedence = true).candidatesByLevel
     }
 
+  // Implicits found in the implicit scope of a type (companions of its parts) do not depend on the local
+  // search scope, so they are cached per file rather than per scope representative: a Scala 3 file with many
+  // `for` generators or `case` clauses has many representatives and would otherwise recollect them per scope.
   def cachedImplicitsByType(scType: ScType): Set[ScalaResolveResult] =
     cachedWithRecursionGuard(
       "cachedImplicitsByType",
-      representative,
+      Option(representative.getContainingFile).getOrElse(representative),
       Set.empty[ScalaResolveResult],
-      BlockModificationTracker(representative),
+      ScalaPsiManager.instance(representative.getProject).TopLevelModificationTracker,
       Tuple1(scType)
     ) {
       new ImplicitParametersProcessor(representative, withoutPrecedence = true)

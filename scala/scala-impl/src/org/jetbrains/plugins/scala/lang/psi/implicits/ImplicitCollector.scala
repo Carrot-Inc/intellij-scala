@@ -14,6 +14,7 @@ import org.jetbrains.plugins.scala.lang.psi.api.statements._
 import org.jetbrains.plugins.scala.lang.psi.api.statements.params.{ScParameter, ScTypeParam, TypeParamIdOwner}
 import org.jetbrains.plugins.scala.lang.psi.api.toplevel.ScNamedElement
 import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.{ScClass, ScGiven, ScTemplateDefinition, ScTypeDefinition}
+import org.jetbrains.plugins.scala.lang.psi.impl.toplevel.typedef.TypeDefinitionMembers
 import org.jetbrains.plugins.scala.lang.psi.impl.ScalaPsiManager
 import org.jetbrains.plugins.scala.lang.psi.implicits.ExtensionConversionHelper.extensionConversionCheck
 import org.jetbrains.plugins.scala.lang.psi.implicits.ImplicitCollector.{isUnderspecified, _}
@@ -628,7 +629,7 @@ class ImplicitCollector(
 
       if (canContainTargetMethod(c)) {
         filteredCandidatesRaw += c
-      } else if (!isExtensionWithOtherName(c)) {
+      } else if (!isExtensionWithOtherName(c) && !isConversionWithoutTargetMember(c)) {
         filteredCandidatesRaw ++= checkCompatible(
           c,
           withLocalTypeInference,
@@ -1390,6 +1391,31 @@ class ImplicitCollector(
     srr.isExtensionCall && extensionData.exists { data =>
       data.refName.nonEmpty && !ScalaNamesUtil.equivalent(data.refName, srr.renamed.getOrElse(srr.name))
     }
+
+  /**
+   * The counterpart of [[isExtensionWithOtherName]] for implicit conversion methods: a conversion whose declared
+   * result class has no member named like the requested one cannot provide it, so it is dropped before the
+   * conformance check. Only plain conversion methods (explicit parameter clause, not an extension call) whose result
+   * type resolves to a class through `extractClassSimple` are ever dropped; type parameters, compound and opaque
+   * types keep the candidate, as do classes with `Dynamic` members.
+   */
+  private def isConversionWithoutTargetMember(srr: ScalaResolveResult): Boolean =
+    extensionData match {
+      case Some(data) if data.refName.nonEmpty && !srr.isExtensionCall && hasExplicitClause(srr) =>
+        srr.element match {
+          case fun: ScFunction =>
+            fun.returnType.toOption.flatMap(_.extractClassSimple()).exists { cls =>
+              val terms = TypeDefinitionMembers.getSignatures(cls)
+              terms.forName(data.refName).isEmpty &&
+                TypeDefinitionMembers.getTypes(cls).forName(data.refName).isEmpty &&
+                DynamicMemberNames.forall(terms.forName(_).isEmpty)
+            }
+          case _ => false
+        }
+      case _ => false
+    }
+
+  private val DynamicMemberNames = Seq("selectDynamic", "applyDynamic", "applyDynamicNamed", "updateDynamic")
 
   private def hasExplicitClause(srr: ScalaResolveResult): Boolean = srr.element match {
     case fun: ScFunction =>
