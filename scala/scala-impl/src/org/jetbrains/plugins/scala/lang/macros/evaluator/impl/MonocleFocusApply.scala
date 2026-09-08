@@ -5,6 +5,7 @@ import org.jetbrains.plugins.scala.lang.psi.api.expr._
 import org.jetbrains.plugins.scala.lang.psi.api.statements.ScFunction
 import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.{ScObject, ScTypeDefinition}
 import org.jetbrains.plugins.scala.lang.psi.impl.ScalaPsiElementFactory
+import org.jetbrains.plugins.scala.lang.psi.impl.ScalaPsiElementFactory.ScalaPsiElementCreationException
 import org.jetbrains.plugins.scala.lang.psi.types.api.{FunctionType, ParameterizedType}
 import org.jetbrains.plugins.scala.lang.psi.ElementScope
 import org.jetbrains.plugins.scala.lang.psi.types.{Context, ScType, api}
@@ -12,7 +13,6 @@ import org.jetbrains.plugins.scala.project.ProjectContext
 import org.jetbrains.plugins.scala.lang.psi.types._
 
 import scala.annotation.tailrec
-import scala.util.Try
 
 /**
  * Types `Focus[S](_.a.b)`, `GenLens[S](_.a.b)` and `Focus[S](s => s.a.b)` as `monocle.Lens[S, B]`.
@@ -127,8 +127,10 @@ object MonocleFocusApply {
   private def typeOfPath(from: ScType, path: List[String], invocation: MethodInvocation)
                         (implicit context: Context): Option[ScType] = {
     val text = s"((focusRoot: ${from.canonicalText}) => focusRoot.${path.mkString(".")})"
-    Try(ScalaPsiElementFactory.createExpressionWithContextFromText(text, invocation.getContext, invocation))
-      .toOption
+    val lambda =
+      try Some(ScalaPsiElementFactory.createExpressionWithContextFromText(text, invocation.getContext, invocation))
+      catch { case _: ScalaPsiElementCreationException => None }
+    lambda
       .flatMap(_.`type`().toOption)
       .collect { case FunctionType(result, _) => result }
   }

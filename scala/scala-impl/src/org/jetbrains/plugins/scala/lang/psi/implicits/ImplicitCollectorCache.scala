@@ -2,7 +2,7 @@ package org.jetbrains.plugins.scala.lang.psi.implicits
 
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiElement
-import org.jetbrains.plugins.scala.caches.RecursionManager
+import org.jetbrains.plugins.scala.caches.{BlockModificationTracker, RecursionManager}
 import org.jetbrains.plugins.scala.caches.stats.Tracer
 import org.jetbrains.plugins.scala.lang.psi.api.statements.{ScExtension, ScFunction}
 import org.jetbrains.plugins.scala.lang.psi.types.ScType
@@ -12,16 +12,27 @@ import org.jetbrains.plugins.scala.util.HashBuilder.toHashBuilder
 
 import java.util.concurrent.ConcurrentHashMap
 
+/**
+ * Search results are kept across edits that cannot change them: every entry is stamped with the block modification
+ * count of its search scope, which changes when anything inside that block or an enclosing block is edited and
+ * on every top-level change (signatures, imports, members). Candidate definitions can only change through top-level
+ * edits, so an entry with a matching stamp is still valid. The cache is cleared as a whole on top-level changes.
+ */
 class ImplicitCollectorCache(project: Project) {
+  private final case class Cached(stamp: Long, results: Seq[ScalaResolveResult])
+
   private val map =
-    new ConcurrentHashMap[(ImplicitSearchScope, ScType), Seq[ScalaResolveResult]]()
+    new ConcurrentHashMap[(ImplicitSearchScope, ScType), Cached]()
 
   private val nonValueTypesMap =
     new ConcurrentHashMap[NonValueTypesKey, NonValueFunctionTypes]()
 
+  private def stamp(scope: ImplicitSearchScope): Long =
+    BlockModificationTracker(scope.representative).getModificationCount
+
   def get(place: PsiElement, tp: ScType): Option[Seq[ScalaResolveResult]] = {
     val scope = ImplicitSearchScope.forElement(place)
-    Option(map.get((scope, tp)))
+    Option(map.get((scope, tp))).filter(_.stamp == stamp(scope)).map(_.results)
   }
 
   def getOrCompute(place: PsiElement, tp: ScType, mayCacheResult: Boolean)
@@ -74,7 +85,7 @@ class ImplicitCollectorCache(project: Project) {
 
   def put(place: PsiElement, tp: ScType, value: Seq[ScalaResolveResult]): Unit = {
     val scope = ImplicitSearchScope.forElement(place)
-    map.put((scope, tp), value)
+    map.put((scope, tp), Cached(stamp(scope), value))
   }
 
   def size(): Int = map.size() + nonValueTypesMap.size()

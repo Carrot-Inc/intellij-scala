@@ -541,7 +541,6 @@ class ScalaPsiManager(implicit val project: Project) extends Disposable {
     }
     PropertyMethods.clearCache()
     collectImplicitObjectsCache.clear()
-    implicitCollectorCache.clear()
     idToName.clear()
   }
 
@@ -554,6 +553,7 @@ class ScalaPsiManager(implicit val project: Project) extends Disposable {
 
   private def clearOnTopLevelChange(): Unit = {
     clearOnChange()
+    implicitCollectorCache.clear()
     clearCacheOnTopLevelChange.fireCleanup()
     syntheticPackages.clear()
   }
