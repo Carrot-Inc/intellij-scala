@@ -3,7 +3,7 @@ package org.jetbrains.plugins.scala.util
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.psi.{PsiClass, PsiElement, PsiPackage}
 import org.jetbrains.plugins.scala.extensions._
-import org.jetbrains.plugins.scala.lang.psi.api.statements.ScTypeAlias
+import org.jetbrains.plugins.scala.lang.psi.api.statements.{ScTypeAlias, ScTypeAliasDefinition}
 import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScObject
 import org.jetbrains.plugins.scala.lang.psi.types.api.{TupleType, TypeConstructorOps}
 import org.jetbrains.plugins.scala.lang.psi.types.nonvalue.ScTypePolymorphicType
@@ -52,11 +52,23 @@ object ScEquivalenceUtil {
         case _ => false
     }
 
-    if (ta1.isExistentialTypeAlias && ta2.isExistentialTypeAlias) {
+    if (ta1 == ta2) true
+    else if (ta1.isExistentialTypeAlias && ta2.isExistentialTypeAlias) {
       equiv(ta1.lowerBound, ta2.lowerBound) && equiv(ta1.upperBound, ta2.upperBound)
     }
-    else ta1 == ta2
+    else areCopiesOfOneAlias(ta1, ta2)
   }
+
+  /**
+   * The same alias read from two copies of a library, e.g. the JVM and the Scala.js jar of a cross-built
+   * project (shared sources are resolved against one platform, their users may sit on the other);
+   * mirrors what [[areClassesEquivalent]] does for classes.
+   */
+  private def areCopiesOfOneAlias(ta1: ScTypeAlias, ta2: ScTypeAlias): Boolean =
+    ta1.name == ta2.name &&
+      ta1.is[ScTypeAliasDefinition] == ta2.is[ScTypeAliasDefinition] &&
+      ta1.qualifiedNameOpt.exists(ta2.qualifiedNameOpt.contains) &&
+      areClassesEquivalent(ta1.containingClass, ta2.containingClass)
 
   def smartEquivalence(elem1: PsiElement, elem2: PsiElement)(implicit context: Context): Boolean =
     (elem1, elem2) match {
