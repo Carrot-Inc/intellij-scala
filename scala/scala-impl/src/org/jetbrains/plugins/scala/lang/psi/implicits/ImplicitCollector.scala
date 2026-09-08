@@ -319,9 +319,10 @@ class ImplicitCollector(
     val applicableVisibleExtensions =
       collectCompatibleCandidatesFromLexicalScope(lexicalScopeCandidates.iterator, extensionsOnly = true)
 
-    // If we find exactly one extension method, that extension will be chosen regardless of application errors
-    // and other implicit conversions, so we can stop searching further and just return that one extension
-    if (applicableVisibleExtensions.sizeIs == 1) applicableVisibleExtensions
+    // A single visible extension method is the result when it fits the call: scalac rewrites `e.m(args)` to
+    // `m(e)(args)` and only falls back to implicit conversions when that rewriting does not typecheck (for
+    // instance `e.m` without arguments where the extension needs them but an implicit class member does not).
+    if (applicableVisibleExtensions.sizeIs == 1 && applicableVisibleExtensions.forall(fitsCall)) applicableVisibleExtensions
     else {
       //Step 2: other candidates from lexical scope
       val applicableVisibleCandidates =
@@ -1363,6 +1364,24 @@ class ImplicitCollector(
       case None => tp
     }
   }
+
+  /**
+   * scalac commits a visible extension `m` for `e.m` only when `m(e)` typechecks against the expected type,
+   * and otherwise moves on to implicit conversions. Argument mismatches of `e.m(args)` surface later, so
+   * they keep the extension; a bare `e.m` whose extension still needs a non-implicit argument list fails at
+   * once unless eta-expansion is expected.
+   */
+  private def fitsCall(extension: ScalaResolveResult): Boolean =
+    extensionData.map(_.processor) match {
+      case Some(processor: MethodResolveProcessor) if processor.invocationClauses.isEmpty && !processor.isUnderscore =>
+        extension.element match {
+          case fun: ScFunction =>
+            val needsArguments = fun.paramClauses.clauses.exists(clause => !clause.isImplicit)
+            !needsArguments || processor.expectedOption().exists(FunctionType.isFunctionType)
+          case _ => true
+        }
+      case _ => true
+    }
 
   private def applyExtensionPredicate(cand: ScalaResolveResult): Option[ScalaResolveResult] = {
     extensionData match {

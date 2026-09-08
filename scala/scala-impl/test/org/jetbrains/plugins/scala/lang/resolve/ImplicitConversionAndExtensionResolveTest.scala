@@ -401,4 +401,44 @@ class ImplicitConversionAndExtensionResolveTest extends SimpleResolveTestBase {
        |  extension (x: T) ${REFTGT}def foo = ???
        |def bar = (??? : T).fo${REFSRC}o
        |""".stripMargin)
+
+  def testBareSelectionFallsBackToImplicitClassMemberWhenExtensionNeedsArguments(): Unit = doResolveTest(
+    s"""
+       |// scalac commits an extension for `e.m` only if `m(e)` typechecks against the expected type;
+       |// `whenDefined(p)` still needs its argument list, so the implicit class member is used instead.
+       |trait TagMod
+       |trait VdomElement extends TagMod
+       |object lib:
+       |  trait OptionLike[O[_]]
+       |  given OptionLike[Option] = ???
+       |  implicit final class OptionExt[O[_], A](o: O[A])(implicit O: OptionLike[O]):
+       |    ${REFTGT}def whenDefined(implicit f: A => TagMod): TagMod = ???
+       |object wrappers:
+       |  extension [O[_], A](oa: O[A])(using O: lib.OptionLike[O])
+       |    def whenDefined(f: A => TagMod): TagMod = ???
+       |object use:
+       |  import lib.*
+       |  import wrappers.*
+       |  def bare(p: Option[VdomElement]): TagMod = p.whenDe${REFSRC}fined
+       |""".stripMargin
+  )
+
+  def testAppliedSelectionKeepsExtensionOverImplicitClassMember(): Unit = doResolveTest(
+    s"""
+       |trait TagMod
+       |trait VdomElement extends TagMod
+       |object lib:
+       |  trait OptionLike[O[_]]
+       |  given OptionLike[Option] = ???
+       |  implicit final class OptionExt[O[_], A](o: O[A])(implicit O: OptionLike[O]):
+       |    def whenDefined(implicit f: A => TagMod): TagMod = ???
+       |object wrappers:
+       |  extension [O[_], A](oa: O[A])(using O: lib.OptionLike[O])
+       |    ${REFTGT}def whenDefined(f: A => TagMod): TagMod = ???
+       |object use:
+       |  import lib.*
+       |  import wrappers.*
+       |  def applied(p: Option[VdomElement]): TagMod = p.whenDe${REFSRC}fined(e => e)
+       |""".stripMargin
+  )
 }
