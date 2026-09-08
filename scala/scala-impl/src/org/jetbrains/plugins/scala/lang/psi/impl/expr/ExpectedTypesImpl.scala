@@ -351,7 +351,7 @@ class ExpectedTypesImpl extends ExpectedTypes {
             case srr @ ScalaResolveResult(fun: ScFunction, s: ScSubstitutor) if fun.name == CommonNames.Apply =>
               if (srr.innerResolveResult.exists(inner => syntheticKindProjectorApplyNames.contains(inner.name)))
                 tp
-              else Right(fun.polymorphicType(s))
+              else Right(fun.polymorphicType(s, dropExtensionClauses = srr.shouldDropExtensionClauses))
             case _ => tp
           }
 
@@ -732,7 +732,7 @@ class ExpectedTypesImpl extends ExpectedTypes {
 
       applySrr match {
         case Array(srr @ ScalaResolveResult(fun: ScFunction, s)) =>
-          val polyType        = fun.polymorphicType(s)
+          val polyType        = fun.polymorphicType(s, dropExtensionClauses = srr.shouldDropExtensionClauses)
           val applyMethodType = polyType.updateTypeOfDynamicCall(srr.isDynamic)
 
           val updatedMethodCall =
