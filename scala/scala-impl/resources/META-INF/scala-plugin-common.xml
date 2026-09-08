@@ -1045,6 +1045,11 @@
                          key="displayname.loop.variable.not.updated.inside.loop"
                          groupPath="Scala" groupKey="group.general" shortName="LoopVariableNotUpdated" id="LoopVariableNotUpdatedInspection" level="WARNING"
                          enabledByDefault="true" language="Scala"/>
+        <localInspection implementationClass="org.jetbrains.plugins.scala.codeInspection.annotator.ScalaAnnotatorErrorsInspection"
+                         displayName="Scala annotator errors (batch sweeps)"
+                         groupPath="Scala" groupKey="group.general" bundle="messages.ScalaInspectionBundle"
+                         shortName="ScalaAnnotatorErrors" level="ERROR"
+                         enabledByDefault="false" language="Scala"/>
         <localInspection implementationClass="org.jetbrains.plugins.scala.codeInspection.ScalaFileNameInspection"
                          bundle="messages.ScalaInspectionBundle"
                          key="fileName.does.not.match"
