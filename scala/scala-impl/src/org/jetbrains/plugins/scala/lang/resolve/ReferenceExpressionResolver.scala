@@ -700,7 +700,8 @@ class ReferenceExpressionResolver(implicit projectContext: ProjectContext) {
             val res = resolvedWithApplyRef.map { actualSrr =>
               actualSrr.copy(
                 innerResolveResult = innerSrr.toOption,
-                parentElement      = innerSrr.element.toOption
+                parentElement      = innerSrr.element.toOption,
+                importsUsed        = actualSrr.importsUsed ++ innerSrr.importsUsed
               )
             }
             res
