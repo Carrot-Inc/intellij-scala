@@ -69,13 +69,16 @@ object MonocleFocusApply {
 
   private val FocusFactories = Set("monocle.Focus", "monocle.macros.GenLens")
 
+  private val FocusFactoryNames = Set("Focus", "GenLens")
+
+  //a full resolve would check the invocation's applicability, typing the very argument whose expected type is asked
   private def isFocusFactory(expression: ScExpression): Boolean = expression match {
-    case reference: ScReferenceExpression =>
-      reference.resolve() match {
-        case obj: ScObject     => FocusFactories(obj.qualifiedName)
-        case fun: ScFunction   => fun.name == "apply" && Option(fun.containingClass).exists(c => FocusFactories(c.qualifiedName))
-        case _                 => false
-      }
+    case reference: ScReferenceExpression if FocusFactoryNames(reference.refName) =>
+      reference.shapeResolve.exists(_.element match {
+        case obj: ScObject   => FocusFactories(obj.qualifiedName)
+        case fun: ScFunction => fun.name == "apply" && Option(fun.containingClass).exists(c => FocusFactories(c.qualifiedName))
+        case _               => false
+      })
     case _ => false
   }
 
