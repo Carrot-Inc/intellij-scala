@@ -65,8 +65,16 @@ final case class ScTypePolymorphicType private (
    */
   def argsProtoTypeSubst(pt: Option[ScType], dropContradictingBounds: Boolean = false)
                         (implicit context: Context): ScSubstitutor = {
+    //like `resultApprox` in scalac: implicit clauses are not applied explicitly, the expected type
+    //constrains what is left after them
+    @tailrec
+    def withoutImplicitClauses(tpe: ScType): ScType = tpe match {
+      case ScMethodType(result, _, true) => withoutImplicitClauses(result)
+      case other                         => other
+    }
+
     val maybeTypeParts = internalType match {
-      case ScMethodType(retTpe, params, _) => Option((retTpe, params.map(_.paramType)))
+      case ScMethodType(retTpe, params, _) => Option((withoutImplicitClauses(retTpe), params.map(_.paramType)))
       case FunctionType(retTpe, params)    => Option((retTpe, params))
       case _                               => None
     }
