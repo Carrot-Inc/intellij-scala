@@ -15,7 +15,7 @@ import org.jetbrains.plugins.scala.lang.psi.api.expr.ExpectedTypes._
 import org.jetbrains.plugins.scala.lang.psi.api.expr._
 import org.jetbrains.plugins.scala.lang.psi.api.statements.ScFunction.CommonNames
 import org.jetbrains.plugins.scala.lang.psi.api.statements._
-import org.jetbrains.plugins.scala.lang.psi.api.statements.params.{ScClassParameter, ScParameter, ScTypeParam}
+import org.jetbrains.plugins.scala.lang.psi.api.statements.params.{ScClassParameter, ScParameter, ScTypeParam, TypeParamIdOwner}
 import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScMember
 import org.jetbrains.plugins.scala.lang.psi.api.toplevel.{ScEarlyDefinitions, ScTypeParametersOwner, ScTypedDefinition}
 import org.jetbrains.plugins.scala.lang.psi.impl.ScalaPsiManager
@@ -765,9 +765,13 @@ class ExpectedTypesImpl extends ExpectedTypes {
           case _                           => callPt
         }
 
-        val params = extractParamsFromMethodType(mt)
-
-        fromMethodParams(params, t.argsProtoTypeSubst(unwrappedPt.toOption))
+        val params     = extractParamsFromMethodType(mt)
+        val protoSubst = t.argsProtoTypeSubst(unwrappedPt.toOption)
+        val subst =
+          if (expr.isInScala3Module && isUntypedFunctionLiteral(expr))
+            siblingArgumentsSubst(expr, t, params, argExprs, idx, isDynamicNamed).followed(protoSubst)
+          else protoSubst
+        fromMethodParams(params, subst)
       case Right(anotherType) if !forApply =>
         tryApplyMethod(anotherType) match {
           case Some((applyInvokedType, isApplyDynamicNamed)) =>
@@ -817,6 +821,57 @@ class ExpectedTypesImpl extends ExpectedTypes {
   }
 
   private def typeElem(parameter: Parameter): Option[ScTypeElement] = parameter.paramInCode.flatMap(_.typeElement)
+
+  /**
+   * Scala 3 types a function literal with untyped parameters after the other arguments of its clause, so the
+   * type arguments those siblings determine are known when the literal is typed.
+   */
+  private def siblingArgumentsSubst(
+    place:          ScExpression,
+    t:              ScTypePolymorphicType,
+    params:         Seq[Parameter],
+    argExprs:       Seq[ScExpression],
+    idx:            Int,
+    isDynamicNamed: Boolean
+  )(implicit context: Context): ScSubstitutor = {
+    val undefined = t.undefinedSubstitutor
+    val constraints = argExprs.zipWithIndex.foldLeft(ConstraintSystem.empty) {
+      case (acc, (arg, i)) if i == idx || isUntypedFunctionLiteral(arg) => acc
+      case (acc, (arg, i)) =>
+        val paramType = arg match {
+          case assign: ScAssignment if !isDynamicNamed => paramTypeForNamed(assign, params).map(_._1)
+          case _ => params.lift(i).orElse(params.lastOption.filter(_.isRepeated)).map(_.paramType)
+        }
+        val argType = (arg match {
+          case assign: ScAssignment => assign.rightExpression
+          case other                => Some(other)
+        }).flatMap(_.getTypeWithoutImplicits().toOption).filterNot(_.isNothing)
+        (paramType, argType) match {
+          case (Some(pt), Some(at)) =>
+            at.conforms(undefined(pt), acc) match {
+              case ConstraintsResult.Left   => acc
+              case solved: ConstraintSystem => solved
+            }
+          case _ => acc
+        }
+    }
+    import place.projectContext
+    constraints.substitutionBounds(canThrowSCE = false, widenInferredTypeArguments = true) match {
+      case Some(bounds) =>
+        ScSubstitutor.bind(t.typeParameters) { tp =>
+          bounds.tvMap.get(tp.typeParamId).filterNot(_.isNothing).getOrElse(TypeParameterType(tp))
+        }
+      case None => ScSubstitutor.empty
+    }
+  }
+
+  private def isUntypedFunctionLiteral(expr: ScExpression): Boolean = expr match {
+    case fn: ScFunctionExpr          => fn.parameters.exists(_.typeElement.isEmpty)
+    case block: ScBlockExpr          => block.resultExpression.exists(isUntypedFunctionLiteral)
+    case parens: ScParenthesisedExpr => parens.innerElement.exists(isUntypedFunctionLiteral)
+    case assign: ScAssignment        => assign.rightExpression.exists(isUntypedFunctionLiteral)
+    case _                           => false
+  }
 
   private def paramTypeForDynamicNamed(original: ParameterType): ParameterType = {
     val (tp, te) = original
