@@ -884,6 +884,7 @@ class ExpectedTypesImpl extends ExpectedTypes {
 
   private def isUntypedFunctionLiteral(expr: ScExpression): Boolean = expr match {
     case fn: ScFunctionExpr          => fn.parameters.exists(_.typeElement.isEmpty)
+    case e if ScUnderScoreSectionUtil.isUnderscoreFunction(e) => true
     case block: ScBlockExpr          => block.resultExpression.exists(isUntypedFunctionLiteral)
     case parens: ScParenthesisedExpr => parens.innerElement.exists(isUntypedFunctionLiteral)
     case assign: ScAssignment        => assign.rightExpression.exists(isUntypedFunctionLiteral)

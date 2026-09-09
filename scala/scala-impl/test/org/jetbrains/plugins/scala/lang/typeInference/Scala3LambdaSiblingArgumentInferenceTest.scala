@@ -48,4 +48,12 @@ class Scala3LambdaSiblingArgumentInferenceTest extends ScalaLightCodeInsightFixt
   )
 
   def testWithinTypedContext(): Unit = checkTextHasNoErrors(defs + "  def f(x: Sel): Int = d10(x, v => 1)\n")
+
+  def testUnderscoreSectionSiblingIsUntypedToo(): Unit = checkTextHasNoErrors(
+    """def decode[A](e: Either[String, A]): Either[Throwable, A] =
+      |  e.fold(s => Left(new RuntimeException(s)), Right(_))
+      |def decodeFlipped[A](e: Either[Throwable, A]): Either[Throwable, A] =
+      |  e.fold(Left(_), a => Right(a))
+      |""".stripMargin
+  )
 }
