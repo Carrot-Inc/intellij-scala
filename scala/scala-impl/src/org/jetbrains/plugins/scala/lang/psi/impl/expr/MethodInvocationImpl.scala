@@ -434,8 +434,9 @@ abstract class MethodInvocationImpl(node: ASTNode) extends ScExpressionImplBase(
               parameters,
               _: Seq[Expression],
               polymorphicType.typeParameters,
-              canThrowSCE = useExpectedType,
-              paramSubst  = paramSubst.toOption
+              canThrowSCE         = useExpectedType,
+              paramSubst          = paramSubst.toOption,
+              isClauseApplication = true
             )
           case _ =>
             (expressions: Seq[Expression]) => {

@@ -894,7 +894,8 @@ object Compatibility {
               params,
               _,
               typeParams,
-              canThrowSCE = canThrowSCE,
+              canThrowSCE         = canThrowSCE,
+              isClauseApplication = true
             ),
             args,
             params

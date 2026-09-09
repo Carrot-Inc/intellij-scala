@@ -790,7 +790,8 @@ object InferUtil {
     shouldUndefineParameters: Boolean               = true,
     canThrowSCE:              Boolean               = false,
     filterTypeParams:         Boolean               = true,
-    paramSubst:               Option[ScSubstitutor] = None
+    paramSubst:               Option[ScSubstitutor] = None,
+    isClauseApplication:      Boolean               = false
   )(implicit context: Context): (ScTypePolymorphicType, ApplicabilityCheckResult) = {
     implicit val projectContext: ProjectContext = retType.projectContext
 
@@ -884,37 +885,63 @@ object InferUtil {
 
             val contrSubst = ScSubstitutor.bind(notInferred)(tp => unSubst(tp.upperType))
 
+            //Scala 3 interpolates type variables only once the tree's type is no longer a method type,
+            //so a type parameter this clause leaves room in stays open for the explicit clauses still to come
+            def stillOpen(inferred: SubstitutionBounds): Set[Long] = retType match {
+              case ScMethodType(_, _, false) if isClauseApplication && context.isScala3 =>
+                typeParams.map(_.typeParamId).filter { id =>
+                  val determined = inferred.lowerMap.get(id).zip(inferred.upperMap.get(id)).exists {
+                    case (lower, upper) => lower.equiv(upper)
+                  }
+                  !determined && retType.hasRecursiveTypeParameters(Set(id))
+                }.toSet
+              case _ => Set.empty
+            }
+
             import org.jetbrains.plugins.scala.lang.psi.types.recursiveUpdate.SubtypeUpdater._
 
-            def updateWithSubst(sub: ScSubstitutor): ScTypePolymorphicType = ScTypePolymorphicType(
-              sub(retType),
-              typeParams.filter { tp =>
-                val removeMe = newConstraints.isApplicable(tp.typeParamId)
+            def updateWithSubst(inferred: SubstitutionBounds): ScTypePolymorphicType = {
+              val open = stillOpen(inferred)
+              val sub  = ScSubstitutor(inferred.tvMap.filter { case (id, _) => !open(id) }).followed(contrSubst)
 
-                if (removeMe && canThrowSCE) {
-                  tp.psiTypeParameter match {
-                    case typeParam: ScTypeParam =>
-                      val tpt     = TypeParameterType(typeParam)
-                      val substed = sub(tpt)
+              def narrowed(tp: TypeParameter): TypeParameter =
+                if (!open(tp.typeParamId)) tp
+                else
+                  TypeParameter(
+                    tp.psiTypeParameter,
+                    tp.typeParameters,
+                    inferred.lowerMap.getOrElse(tp.typeParamId, tp.lowerType),
+                    inferred.upperMap.getOrElse(tp.typeParamId, tp.upperType)
+                  )
 
-                      val kindsMatch =
-                        tpt.typeParameters.isEmpty ||
-                          substed.isAny ||
-                          TypeVariableUnification.unifiableKinds(tpt, substed)
+              ScTypePolymorphicType(
+                sub(retType),
+                typeParams.filter { tp =>
+                  val removeMe = newConstraints.isApplicable(tp.typeParamId) && !open(tp.typeParamId)
 
-                      if (!kindsMatch) throw new SafeCheckException
-                    case _ => ()
+                  if (removeMe && canThrowSCE) {
+                    tp.psiTypeParameter match {
+                      case typeParam: ScTypeParam =>
+                        val tpt     = TypeParameterType(typeParam)
+                        val substed = sub(tpt)
+
+                        val kindsMatch =
+                          tpt.typeParameters.isEmpty ||
+                            substed.isAny ||
+                            TypeVariableUnification.unifiableKinds(tpt, substed)
+
+                        if (!kindsMatch) throw new SafeCheckException
+                      case _ => ()
+                    }
                   }
-                }
-                !removeMe
-              }.map(_.update(sub))
-            )
+                  !removeMe
+                }.map(narrowed(_).update(sub))
+              )
+            }
 
-            newConstraints
-              .substitutionBounds(canThrowSCE = true, widenInferredTypeArguments = true)
-              .map(_.substitutor) match {
-              case Some(substitutor)    => updateWithSubst(substitutor.followed(contrSubst))
-              case None if !canThrowSCE => updateWithSubst(unSubst.followed(contrSubst))
+            newConstraints.substitutionBounds(canThrowSCE = true, widenInferredTypeArguments = true) match {
+              case Some(inferred)       => updateWithSubst(inferred)
+              case None if !canThrowSCE => updateWithSubst(bounds)
               case None                 => throw new SafeCheckException
             }
           }
