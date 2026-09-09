@@ -885,17 +885,31 @@ object InferUtil {
 
             val contrSubst = ScSubstitutor.bind(notInferred)(tp => unSubst(tp.upperType))
 
-            //Scala 3 interpolates type variables only once the tree's type is no longer a method type,
-            //so a type parameter this clause leaves room in stays open for the explicit clauses still to come
-            def stillOpen(inferred: SubstitutionBounds): Set[Long] = retType match {
-              case ScMethodType(_, _, false) if isClauseApplication && context.isScala3 =>
-                typeParams.map(_.typeParamId).filter { id =>
-                  val determined = inferred.lowerMap.get(id).zip(inferred.upperMap.get(id)).exists {
-                    case (lower, upper) => lower.equiv(upper)
-                  }
-                  !determined && retType.hasRecursiveTypeParameters(Set(id))
-                }.toSet
-              case _ => Set.empty
+            //Scala 3 interpolates type variables only once the tree's type is no longer a method type, so a
+            //parameter this clause constrained but left room in stays open for the explicit clauses still to come
+            def stillOpen(inferred: SubstitutionBounds): Set[Long] = {
+              @tailrec
+              def explicitParamTypes(tpe: ScType, acc: Seq[ScType]): Seq[ScType] = tpe match {
+                case ScMethodType(result, params, false) => explicitParamTypes(result, acc ++ params.map(_.paramType))
+                case _                                   => acc
+              }
+
+              val laterParamTypes =
+                if (isClauseApplication && context.isScala3) explicitParamTypes(retType, Seq.empty)
+                else                                         Seq.empty
+
+              typeParams.filter { tp =>
+                val id = tp.typeParamId
+
+                def determined = inferred.lowerMap.get(id).zip(inferred.upperMap.get(id)).exists {
+                  case (lower, upper) => lower.equiv(upper)
+                }
+
+                tp.typeParameters.isEmpty &&
+                  constraints.isApplicable(id) &&
+                  laterParamTypes.exists(_.hasRecursiveTypeParameters(Set(id))) &&
+                  !determined
+              }.map(_.typeParamId).toSet
             }
 
             import org.jetbrains.plugins.scala.lang.psi.types.recursiveUpdate.SubtypeUpdater._
@@ -904,15 +918,14 @@ object InferUtil {
               val open = stillOpen(inferred)
               val sub  = ScSubstitutor(inferred.tvMap.filter { case (id, _) => !open(id) }).followed(contrSubst)
 
+              //a parameter inferred from below keeps the widened value (`Int`, not `1`) as its new lower bound
               def narrowed(tp: TypeParameter): TypeParameter =
                 if (!open(tp.typeParamId)) tp
-                else
-                  TypeParameter(
-                    tp.psiTypeParameter,
-                    tp.typeParameters,
-                    inferred.lowerMap.getOrElse(tp.typeParamId, tp.lowerType),
-                    inferred.upperMap.getOrElse(tp.typeParamId, tp.upperType)
-                  )
+                else {
+                  val id    = tp.typeParamId
+                  val lower = if (inferred.lowerMap.contains(id)) inferred.tvMap.getOrElse(id, inferred.lowerMap(id)) else tp.lowerType
+                  TypeParameter(tp.psiTypeParameter, tp.typeParameters, lower, inferred.upperMap.getOrElse(id, tp.upperType))
+                }
 
               ScTypePolymorphicType(
                 sub(retType),
