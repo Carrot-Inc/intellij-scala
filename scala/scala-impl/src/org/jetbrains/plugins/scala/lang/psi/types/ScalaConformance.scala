@@ -484,8 +484,12 @@ trait ScalaConformance extends api.Conformance with TypeVariableUnification {
     }
 
     trait CompoundTypeVisitor extends ScalaTypeVisitor {
+      //an intersection below a type parameter still to be inferred is its lower bound as a whole,
+      //a component alone would be an arbitrary choice, see `visitUndefinedType`
+      private def isBoundOfUndefined: Boolean = l.is[UndefinedType]
+
       override def visitAndType(t: ScAndType): Unit =
-        compareComponents(Seq(t.lhs, t.rhs))
+        if (!isBoundOfUndefined) compareComponents(Seq(t.lhs, t.rhs))
 
       private def traverseComponents(
         comps: Seq[ScType],
@@ -524,7 +528,8 @@ trait ScalaConformance extends api.Conformance with TypeVariableUnification {
           }
       }
 
-      override def visitCompoundType(c: ScCompoundType): Unit = compareComponents(c.components)
+      override def visitCompoundType(c: ScCompoundType): Unit =
+        if (!isBoundOfUndefined) compareComponents(c.components)
     }
 
     trait ExistentialVisitor extends ScalaTypeVisitor {
@@ -1466,6 +1471,17 @@ trait ScalaConformance extends api.Conformance with TypeVariableUnification {
           }
           result = conformsInner(l, tpt2.upperType, HashSet.empty, constraints)
           return
+        case _ =>
+      }
+
+      //a component still to be inferred is bounded by the type parameter itself, checking the
+      //intersection against the parameter's lower bound would pin that component to `Nothing`
+      r match {
+        case _: ScCompoundType | _: ScAndType =>
+          rightVisitor = new CompoundTypeVisitor {}
+          r.visitType(rightVisitor)
+          if (result != null && result.isRight) return
+          result = null
         case _ =>
       }
 
