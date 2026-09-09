@@ -5,6 +5,7 @@ import com.intellij.psi.util.PsiTreeUtil
 import org.jetbrains.plugins.scala.extensions.{IterableExt, ObjectExt, PsiElementExt, PsiNamedElementExt, PsiTypeExt}
 import org.jetbrains.plugins.scala.externalLibraries.kindProjector.KindProjectorUtil.{Lambda, LambdaSymbolic}
 import org.jetbrains.plugins.scala.lang.psi.ElementScope
+import org.jetbrains.plugins.scala.lang.psi.ScalaPsiUtil
 import org.jetbrains.plugins.scala.lang.psi.ScalaPsiUtil.inNameContext
 import org.jetbrains.plugins.scala.lang.macros.evaluator.impl.MonocleFocusApply
 import org.jetbrains.plugins.scala.lang.psi.api.InferUtil
@@ -351,7 +352,13 @@ class ExpectedTypesImpl extends ExpectedTypes {
             case srr @ ScalaResolveResult(fun: ScFunction, s: ScSubstitutor) if fun.name == CommonNames.Apply =>
               if (srr.innerResolveResult.exists(inner => syntheticKindProjectorApplyNames.contains(inner.name)))
                 tp
-              else Right(fun.polymorphicType(s, dropExtensionClauses = srr.shouldDropExtensionClauses))
+              else {
+                val applyType = fun.polymorphicType(s, dropExtensionClauses = srr.shouldDropExtensionClauses)
+                Right(
+                  if (srr.innerResolveResult.isDefined) tp.fold(_ => applyType, withInvokedTypeParameters(_, applyType))
+                  else applyType
+                )
+              }
             case _ => tp
           }
 
@@ -678,6 +685,16 @@ class ExpectedTypesImpl extends ExpectedTypes {
     } else result
   }
 
+  //the type parameters of a polymorphic invoked expression are inferred together with those of its `apply`,
+  //like `updateGenericType` does when typing the invocation itself
+  private def withInvokedTypeParameters(invokedType: ScType, applyType: ScType): ScType =
+    (invokedType, applyType) match {
+      case (ScTypePolymorphicType(_, outer), ScTypePolymorphicType(internal, inner)) =>
+        ScalaPsiUtil.removeBadBounds(ScTypePolymorphicType(internal, outer ++ inner))
+      case (ScTypePolymorphicType(_, outer), internal) => ScTypePolymorphicType(internal, outer)
+      case _                                           => applyType
+    }
+
   @tailrec
   private def computeExpectedParamType(
     expr:            ScExpression,
@@ -733,7 +750,7 @@ class ExpectedTypesImpl extends ExpectedTypes {
       applySrr match {
         case Array(srr @ ScalaResolveResult(fun: ScFunction, s)) =>
           val polyType        = fun.polymorphicType(s, dropExtensionClauses = srr.shouldDropExtensionClauses)
-          val applyMethodType = polyType.updateTypeOfDynamicCall(srr.isDynamic)
+          val applyMethodType = withInvokedTypeParameters(internalType, polyType).updateTypeOfDynamicCall(srr.isDynamic)
 
           val updatedMethodCall =
             call
