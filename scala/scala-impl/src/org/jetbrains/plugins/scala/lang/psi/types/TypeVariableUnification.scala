@@ -71,20 +71,24 @@ trait TypeVariableUnification { self: ScalaConformance with ProjectContextOwner 
         boundKind == Bound.Equivalence
       )
     } else if (captureLength > 0 && projectContext.project.isPartialUnificationEnabled) {
-      /** Partial unification */
-      val (captured, abstracted) = rhsArgs.splitAt(captureLength)
-      val conformance =
-        checkParameterizedType(
-          tvTypeParameters,
-          lhsArgs,
-          abstracted,
-          constraints,
-          visited,
-          checkWeak,
-          boundKind == Bound.Equivalence
-        )
+      /** Partial unification: the leading arguments of `tpe` are captured, the trailing ones unify with the type variable's */
+      val (captured, abstracted) = args.splitAt(captureLength)
+      val conformance = boundKind match {
+        case Bound.Upper =>
+          checkParameterizedType(abstractedTypeParams, abstracted, tvArgs, constraints, visited, checkWeak)
+        case _ =>
+          checkParameterizedType(
+            tvTypeParameters,
+            tvArgs,
+            abstracted,
+            constraints,
+            visited,
+            checkWeak,
+            boundKind == Bound.Equivalence
+          )
+      }
       if (conformance.isRight) {
-        val abstractedTypeParams = abstracted.indices.map(
+        val lambdaParams = abstracted.indices.map(
           idx => TypeParameter.light("p" + idx + "$$", tvTypeParameters(idx).typeParameters, Nothing, Any)
         )
 
@@ -92,9 +96,9 @@ trait TypeVariableUnification { self: ScalaConformance with ProjectContextOwner 
           ScTypePolymorphicType(
             ScParameterizedType(
               des,
-              captured ++ abstractedTypeParams.map(TypeParameterType(_))
+              captured ++ lambdaParams.map(TypeParameterType(_))
             ),
-            abstractedTypeParams
+            lambdaParams
           )
 
         addBound(conformance.constraints, typeConstructor)
