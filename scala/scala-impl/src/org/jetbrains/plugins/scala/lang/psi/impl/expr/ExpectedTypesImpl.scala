@@ -766,7 +766,7 @@ class ExpectedTypesImpl extends ExpectedTypes {
         }
 
         val params     = extractParamsFromMethodType(mt)
-        val protoSubst = t.argsProtoTypeSubst(unwrappedPt.toOption)
+        val protoSubst = t.argsProtoTypeSubst(unwrappedPt.toOption, dropContradictingBounds = expr.isInScala3Module)
         val subst =
           if (expr.isInScala3Module && isUntypedFunctionLiteral(expr))
             siblingArgumentsSubst(expr, t, params, argExprs, idx, isDynamicNamed).followed(protoSubst)

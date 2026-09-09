@@ -427,7 +427,7 @@ abstract class MethodInvocationImpl(node: ASTNode) extends ScExpressionImplBase(
         val function: Seq[Expression] => (ScType, ApplicabilityCheckResult) = maybePolymorphicType match {
           case Some(polymorphicType) =>
 
-            val paramSubst = polymorphicType.argsProtoTypeSubst(this.expectedType())
+            val paramSubst = polymorphicType.argsProtoTypeSubst(this.expectedType(), dropContradictingBounds = this.isInScala3Module)
 
             localTypeInferenceWithApplicabilityExt(
               returnType,

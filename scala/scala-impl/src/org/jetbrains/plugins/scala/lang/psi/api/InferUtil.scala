@@ -529,7 +529,19 @@ object InferUtil {
        * rollback type inference, it may be fixed later with implicit conversion
        */
       if (cantFindImplicitsFor(result, conformanceResult.constraints)) _nonValueType
+      else if (expr.isInScala3Module && expectedTypeContradictsBounds(inferredWithExpected, typeParams)) _nonValueType
       else                                                             result
+    }
+
+    /** Like `constrainResult` in dotty: an expected type that cannot be reconciled with a type parameter's
+     * own bounds contributes nothing, the arguments decide and the result may still be adapted by an
+     * implicit conversion afterwards. Scala 2 keeps the contradiction and fails, see `Infer.methTypeArgs`.
+     */
+    def expectedTypeContradictsBounds(inferred: ScTypePolymorphicType, typeParams: Seq[TypeParameter]): Boolean = {
+      val undefining = ScSubstitutor.bind(typeParams)(UndefinedType(_))
+      inferred.typeParameters.exists { tp =>
+        !undefining(tp.lowerType).conforms(undefining(tp.upperType), ConstraintSystem.empty, checkWeak = true).isRight
+      }
     }
 
     val nonValueType = (_nonValueType, ptUnwrapped) match {
