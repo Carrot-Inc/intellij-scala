@@ -1320,8 +1320,14 @@ class ImplicitCollector(
 
           val conversionCandidates = implicitCollector.collect()
           conversionCandidates match {
-            case Seq(_) => ConstraintSystem.empty
-            case _      => ConstraintsResult.Left
+            case Seq(conversion) =>
+              // The adapted receiver binds the extension's type parameters the same way a directly
+              // conforming one would, e.g. `Array[E]` adapted to `ArraySeq[E]` fixes `A` in `IterableOnce[A]`.
+              ImplicitConversionResolveResult.applicable(conversion, ptArg, place)
+                .map(_.`type`.conforms(extensionArg, ConstraintSystem.empty))
+                .filter(_.isRight)
+                .getOrElse(ConstraintSystem.empty)
+            case _ => ConstraintsResult.Left
           }
         } else ConstraintsResult.Left
       }
