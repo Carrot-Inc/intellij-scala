@@ -325,6 +325,10 @@ object ImplicitProcessor {
         val upperBound = matchType.toOption.flatMap(_.upperBound)
         upperBound.foreach(collectParts(_))
       }
+      else if (tdef.typeParameters.nonEmpty)
+        // an unapplied type constructor alias, e.g. `Foldable[NonEmptyChain]`: the parts are those of the
+        // aliased constructor, which `AliasType` only expands once the alias is applied
+        tdef.aliasedType.foreach(collectParts(_))
 
     def collectParts(tp: ScType, dealias: Boolean = true): Unit = {
       ProgressManager.checkCanceled()

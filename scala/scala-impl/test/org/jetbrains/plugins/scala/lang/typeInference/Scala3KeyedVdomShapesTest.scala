@@ -66,4 +66,38 @@ class Scala3KeyedVdomShapesTest extends ScalaLightCodeInsightFixtureTestCase {
       |def g(e: NEC[Int]): Long = e.length
       |""".stripMargin
   )
+
+  private val foldableOverNewtype =
+    """trait Foldable[F[_]]:
+      |  def toList[A](fa: F[A]): List[A]
+      |object Impl:
+      |  type Base
+      |  trait Tag[+A]
+      |  type Type[+A] <: Base with Tag[A]
+      |  given Foldable[NEC] = ???
+      |type NEC[+A] = Impl.Type[A]
+      |""".stripMargin
+
+  def testFoldableExtensionSyntaxOverAliasedNewtype(): Unit = checkTextHasNoErrors(
+    foldableOverNewtype +
+      """object syntax:
+        |  extension [F[_], A](fa: F[A])(using F: Foldable[F]) def toList: List[A] = F.toList(fa)
+        |import syntax.*
+        |def f(e: NEC[Int]): List[Int] = e.toList
+        |""".stripMargin
+  )
+
+  def testFoldableImplicitClassSyntaxOverAliasedNewtype(): Unit = checkTextHasNoErrors(
+    foldableOverNewtype +
+      """object syntax:
+        |  implicit final class FoldableOps[F[_], A](private val fa: F[A]) extends AnyVal:
+        |    def toList(implicit F: Foldable[F]): List[A] = F.toList(fa)
+        |import syntax.*
+        |def f(e: NEC[Int]): List[Int] = e.toList
+        |""".stripMargin
+  )
+
+  def testFoldableSummonOverAliasedNewtype(): Unit = checkTextHasNoErrors(
+    foldableOverNewtype + "def f(e: NEC[Int]): List[Int] = summon[Foldable[NEC]].toList(e)\nval fi: Foldable[Impl.Type] = summon[Foldable[NEC]]\n"
+  )
 }
